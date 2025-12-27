@@ -1,0 +1,139 @@
+{
+  "name": "01-Subscription-Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subscribe",
+        "responseMode": "responseNode"
+      },
+      "id": "a1b2c3d4-1111-1111-1111-111111111111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "subscribe-hook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst email = (body.email || '').toLowerCase().trim();\nconst name = (body.name || '').trim();\nconst topics = body.topics || [];\n\nif (!email || !email.includes('@')) {\n  return [{ json: { valid: false, error: 'Invalid email' } }];\n}\nif (!name || name.length < 2) {\n  return [{ json: { valid: false, error: 'Name required' } }];\n}\nif (!topics.length) {\n  return [{ json: { valid: false, error: 'Select topics' } }];\n}\n\nconst id = 'SUB' + Date.now();\nconst token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);\n\nreturn [{\n  json: {\n    valid: true,\n    subscriber_id: id,\n    email: email,\n    name: name,\n    topics: topics.join(', '),\n    subscribed_date: new Date().toISOString(),\n    status: 'active',\n    last_email_sent: '',\n    unsubscribe_token: token,\n    unsubscribed_date: ''\n  }\n}];"
+      },
+      "id": "a1b2c3d4-2222-2222-2222-222222222222",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-3333-3333-3333-333333333333",
+      "name": "IF Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Subscribers"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        }
+      },
+      "id": "a1b2c3d4-4444-4444-4444-444444444444",
+      "name": "Add to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [910, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Validate').item.json.email }}",
+        "subject": "Welcome to Daily Chronicle!",
+        "emailType": "html",
+        "message": "<!DOCTYPE html><html><body style=\"font-family:Georgia,serif;margin:0;padding:0\"><div style=\"max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#1a365d;color:#fff;padding:30px;text-align:center\"><h1 style=\"margin:0;font-size:28px;letter-spacing:2px\">DAILY CHRONICLE</h1></div><div style=\"height:4px;background:linear-gradient(90deg,#d4af37,#f4e4bc,#d4af37)\"></div><div style=\"padding:30px\"><p style=\"font-size:18px\">Dear <strong>{{ $('Validate').item.json.name }}</strong>,</p><p>Welcome! You subscribed to: <strong>{{ $('Validate').item.json.topics }}</strong></p><p>Your first newsletter arrives tomorrow morning!</p></div><div style=\"background:#1a365d;color:#fff;padding:20px;text-align:center;font-size:12px\">Daily Chronicle 2024</div></div></body></html>"
+      },
+      "id": "a1b2c3d4-5555-5555-5555-555555555555",
+      "name": "Welcome Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1130, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:true,message:'Subscribed successfully!'}) }}"
+      },
+      "id": "a1b2c3d4-6666-6666-6666-666666666666",
+      "name": "Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:false,error:$json.error}) }}"
+      },
+      "id": "a1b2c3d4-7777-7777-7777-777777777777",
+      "name": "Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [910, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Validate", "type": "main", "index": 0}]]
+    },
+    "Validate": {
+      "main": [[{"node": "IF Valid", "type": "main", "index": 0}]]
+    },
+    "IF Valid": {
+      "main": [
+        [{"node": "Add to Sheet", "type": "main", "index": 0}],
+        [{"node": "Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Add to Sheet": {
+      "main": [[{"node": "Welcome Email", "type": "main", "index": 0}]]
+    },
+    "Welcome Email": {
+      "main": [[{"node": "Success", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

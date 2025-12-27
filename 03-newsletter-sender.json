@@ -1,0 +1,118 @@
+{
+  "name": "03-Newsletter-Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "hours", "hoursInterval": 24, "triggerAtHour": 8}]
+        }
+      },
+      "id": "c1c2c3d4-1111-1111-1111-111111111111",
+      "name": "Daily 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Content_Cache"}
+      },
+      "id": "c1c2c3d4-2222-2222-2222-222222222222",
+      "name": "Get Cache",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 200],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Subscribers"}
+      },
+      "id": "c1c2c3d4-3333-3333-3333-333333333333",
+      "name": "Get Subs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 400],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const cache = $('Get Cache').all();\nconst subs = $('Get Subs').all();\nconst today = new Date().toISOString().split('T')[0];\n\nconst todayContent = {};\ncache.forEach(c => {\n  const fd = c.json.fetch_date?.split('T')[0];\n  if (fd === today) todayContent[c.json.topic_name] = c.json;\n});\n\nconst emails = [];\nsubs.forEach(s => {\n  if (s.json.status !== 'active') return;\n  const topics = (s.json.topics||'').split(',').map(t=>t.trim());\n  topics.forEach(topic => {\n    if (todayContent[topic]) {\n      emails.push({\n        email: s.json.email,\n        name: s.json.name,\n        topic: topic,\n        token: s.json.unsubscribe_token,\n        data: todayContent[topic]\n      });\n    }\n  });\n});\n\nreturn emails.map(e => ({json:e}));"
+      },
+      "id": "c1c2c3d4-4444-4444-4444-444444444444",
+      "name": "Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {"batchSize": 1},
+      "id": "c1c2c3d4-5555-5555-5555-555555555555",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst data = d.data;\nlet content = [];\ntry { content = typeof data.content === 'string' ? JSON.parse(data.content) : data.content || []; } catch(e) {}\n\nconst articles = content.filter(c => c.type !== 'video').slice(0,8);\nconst videos = content.filter(c => c.type === 'video').slice(0,4);\nconst today = new Date();\nconst dateStr = today.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});\nconst edition = 'Vol. ' + today.getFullYear() + ' | No. ' + Math.floor((today - new Date(today.getFullYear(),0,0)) / 86400000);\n\nconst html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Daily Chronicle - ${d.topic}</title>\n<link href=\"https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Serif+Pro:wght@400;600&family=Old+Standard+TT:wght@400;700&display=swap\" rel=\"stylesheet\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js\"></script>\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js\"></script>\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\nbody{background:#2c2c2c;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px;font-family:'Source Serif Pro',Georgia,serif}\n.toolbar{background:#1a1a1a;padding:15px 30px;border-radius:8px;margin-bottom:20px;display:flex;gap:20px;align-items:center;box-shadow:0 4px 15px rgba(0,0,0,0.3)}\n.toolbar button{background:#d4af37;border:none;padding:10px 20px;font-size:14px;cursor:pointer;border-radius:4px;font-weight:600;color:#1a1a1a;transition:all 0.2s}\n.toolbar button:hover{background:#e8c34a;transform:scale(1.05)}\n.toolbar .page-info{color:#d4af37;font-size:16px;font-family:'Playfair Display',serif}\n.toolbar .download{background:#1a365d;color:#fff}\n#newspaper{width:1000px;height:700px}\n.page{background:#f5f2e8;background-image:url('data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect fill=\"%23f5f2e8\"/><rect x=\"0\" y=\"0\" width=\"100\" height=\"100\" fill=\"url(%23noise)\" opacity=\"0.03\"/></svg>');box-shadow:inset 0 0 50px rgba(0,0,0,0.1)}\n.page-inner{padding:25px;height:100%;position:relative;overflow:hidden}\n\n/* Cover */\n.cover{background:linear-gradient(180deg,#1a365d 0%,#0d1b2a 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;color:#fff}\n.cover-masthead{font-family:'Old Standard TT',serif;font-size:52px;font-weight:700;letter-spacing:10px;text-transform:uppercase;margin-bottom:5px}\n.cover-stars{color:#d4af37;font-size:36px}\n.cover-line{width:70%;height:2px;background:linear-gradient(90deg,transparent,#d4af37,transparent);margin:20px 0}\n.cover-edition{font-size:14px;color:#8aa;letter-spacing:3px;margin-bottom:10px}\n.cover-date{font-size:18px;color:#d4af37;letter-spacing:2px;margin-bottom:40px}\n.cover-headline{font-family:'Playfair Display',serif;font-size:36px;max-width:85%;line-height:1.3;margin-bottom:30px;font-weight:700}\n.cover-topic{background:#d4af37;color:#1a365d;padding:10px 30px;font-weight:700;font-size:12px;letter-spacing:3px;text-transform:uppercase}\n\n/* Newspaper Header */\n.news-header{border-bottom:3px double #1a365d;padding-bottom:10px;margin-bottom:15px}\n.news-header h1{font-family:'Old Standard TT',serif;font-size:28px;text-align:center;letter-spacing:5px;color:#1a365d}\n.news-header-meta{display:flex;justify-content:space-between;font-size:10px;color:#666;margin-top:5px;border-top:1px solid #1a365d;padding-top:5px}\n\n/* Lead Article */\n.lead{margin-bottom:20px;border-bottom:1px solid #ddd;padding-bottom:15px}\n.lead h2{font-family:'Playfair Display',serif;font-size:28px;color:#1a365d;line-height:1.2;margin-bottom:10px}\n.lead .meta{font-size:11px;color:#666;margin-bottom:10px;display:flex;align-items:center;gap:8px}\n.lead .meta img{width:16px;height:16px;border-radius:2px}\n.lead img.main{width:100%;height:180px;object-fit:cover;margin-bottom:10px;border:1px solid #ccc}\n.lead p{font-size:13px;line-height:1.7;color:#333;text-align:justify;column-count:2;column-gap:20px}\n.lead .points{margin-top:10px;padding:10px;background:#f0ebe0;border-left:3px solid #d4af37}\n.lead .points li{font-size:12px;margin:5px 0;color:#444}\n\n/* Article Grid */\n.articles{display:grid;grid-template-columns:1fr 1fr;gap:15px}\n.article{border-left:2px solid #d4af37;padding-left:12px}\n.article h3{font-family:'Playfair Display',serif;font-size:15px;color:#1a365d;margin-bottom:5px;line-height:1.3}\n.article .meta{font-size:10px;color:#888;margin-bottom:5px}\n.article .meta img{width:12px;height:12px;vertical-align:middle;margin-right:3px}\n.article p{font-size:12px;line-height:1.5;color:#555}\n.article img{width:100%;height:70px;object-fit:cover;margin-top:8px;border:1px solid #ddd}\n\n/* Video Section */\n.video-header{font-family:'Old Standard TT',serif;font-size:20px;text-align:center;color:#1a365d;border-bottom:2px solid #1a365d;padding-bottom:8px;margin-bottom:15px}\n.video-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}\n.video-card{background:#fff;padding:12px;border:1px solid #ddd;box-shadow:2px 2px 5px rgba(0,0,0,0.05)}\n.video-card img{width:100%;height:100px;object-fit:cover;margin-bottom:8px}\n.video-card h4{font-size:13px;color:#1a365d;margin-bottom:5px;line-height:1.3}\n.video-card .meta{font-size:10px;color:#888}\n.video-card a{display:inline-block;margin-top:8px;background:#ff0000;color:#fff;padding:5px 12px;text-decoration:none;font-size:11px;border-radius:3px}\n\n/* Sources */\n.sources-header{font-family:'Old Standard TT',serif;font-size:20px;text-align:center;color:#1a365d;border-bottom:2px solid #1a365d;padding-bottom:8px;margin-bottom:15px}\n.source-list{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}\n.source-item{display:flex;align-items:center;gap:10px;padding:10px;background:#fff;border:1px solid #ddd}\n.source-item img{width:24px;height:24px}\n.source-item span{font-size:12px;font-weight:600;color:#1a365d}\n\n/* Back Cover */\n.back{background:linear-gradient(180deg,#1a365d 0%,#0d1b2a 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;color:#fff}\n.back h2{font-family:'Old Standard TT',serif;font-size:32px;margin-bottom:20px}\n.back p{font-size:16px;color:#aaa;margin-bottom:30px}\n.back .unsub a{color:#d4af37;font-size:12px}\n\n/* Page Numbers */\n.page-num{position:absolute;bottom:10px;font-size:10px;color:#888}\n.page-num.left{left:25px}\n.page-num.right{right:25px}\n\n@media print{.toolbar{display:none}#newspaper{box-shadow:none}}\n</style>\n</head>\n<body>\n<div class=\"toolbar\">\n  <button onclick=\"$('#newspaper').turn('previous')\">◄ Previous</button>\n  <span class=\"page-info\">Page <span id=\"cp\">1</span> / <span id=\"tp\">8</span></span>\n  <button onclick=\"$('#newspaper').turn('next')\">Next ►</button>\n  <button class=\"download\" onclick=\"window.print()\">⬇ Download PDF</button>\n</div>\n\n<div id=\"newspaper\">\n  <!-- COVER -->\n  <div class=\"page cover\">\n    <div class=\"cover-stars\">★ ★ ★</div>\n    <div class=\"cover-masthead\">Daily Chronicle</div>\n    <div class=\"cover-line\"></div>\n    <div class=\"cover-edition\">${edition}</div>\n    <div class=\"cover-date\">${dateStr}</div>\n    <div class=\"cover-headline\">${data.hook || 'Breaking News Today'}</div>\n    <div class=\"cover-topic\">${d.topic}</div>\n  </div>\n  \n  <!-- PAGE 2: LEAD STORY -->\n  <div class=\"page\">\n    <div class=\"page-inner\">\n      <div class=\"news-header\">\n        <h1>DAILY CHRONICLE</h1>\n        <div class=\"news-header-meta\">\n          <span>${dateStr}</span>\n          <span>${d.topic.toUpperCase()} EDITION</span>\n          <span>${edition}</span>\n        </div>\n      </div>\n      <div class=\"lead\">\n        <h2>${articles[0]?.title || 'Top Story'}</h2>\n        <div class=\"meta\">\n          ${articles[0] ? `<img src=\"${articles[0].source_logo}\" alt=\"\"><span>${articles[0].source}</span><span>|</span><span>${new Date(articles[0].date).toLocaleDateString()}</span>` : ''}\n        </div>\n        ${articles[0]?.image ? `<img class=\"main\" src=\"${articles[0].image}\" alt=\"\">` : ''}\n        <p>${articles[0]?.summary || 'Read the full coverage inside.'} This edition brings you comprehensive coverage from multiple trusted sources including ${[...new Set(content.map(c=>c.source))].slice(0,3).join(', ')}.</p>\n      </div>\n      <span class=\"page-num right\">2</span>\n    </div>\n  </div>\n  \n  <!-- PAGE 3: MORE ARTICLES -->\n  <div class=\"page\">\n    <div class=\"page-inner\">\n      <div class=\"news-header\">\n        <h1>MORE STORIES</h1>\n        <div class=\"news-header-meta\"><span>${d.topic}</span><span>CONTINUED</span></div>\n      </div>\n      <div class=\"articles\">\n        ${articles.slice(1,5).map(a => `\n        <div class=\"article\">\n          <h3>${a.title}</h3>\n          <div class=\"meta\"><img src=\"${a.source_logo}\">${a.source} | ${new Date(a.date).toLocaleDateString()}</div>\n          <p>${a.summary?.substring(0,120) || ''}...</p>\n          ${a.image ? `<img src=\"${a.image}\" alt=\"\">` : ''}\n        </div>`).join('')}\n      </div>\n      <span class=\"page-num left\">3</span>\n    </div>\n  </div>\n  \n  <!-- PAGE 4: MORE ARTICLES -->\n  <div class=\"page\">\n    <div class=\"page-inner\">\n      <div class=\"news-header\">\n        <h1>IN THE NEWS</h1>\n        <div class=\"news-header-meta\"><span>${d.topic}</span><span>HIGHLIGHTS</span></div>\n      </div>\n      <div class=\"articles\">\n        ${articles.slice(5,9).map(a => `\n        <div class=\"article\">\n          <h3>${a.title}</h3>\n          <div class=\"meta\"><img src=\"${a.source_logo}\">${a.source} | ${new Date(a.date).toLocaleDateString()}</div>\n          <p>${a.summary?.substring(0,120) || ''}...</p>\n          ${a.image ? `<img src=\"${a.image}\" alt=\"\">` : ''}\n        </div>`).join('')}\n      </div>\n      <span class=\"page-num right\">4</span>\n    </div>\n  </div>\n  \n  <!-- PAGE 5: VIDEOS -->\n  <div class=\"page\">\n    <div class=\"page-inner\">\n      <div class=\"video-header\">📺 VIDEO HIGHLIGHTS</div>\n      <div class=\"video-grid\">\n        ${videos.length > 0 ? videos.map(v => `\n        <div class=\"video-card\">\n          <img src=\"${v.image}\" alt=\"${v.title}\">\n          <h4>${v.title?.substring(0,50)}${v.title?.length>50?'...':''}</h4>\n          <div class=\"meta\"><img src=\"${v.source_logo}\" style=\"width:12px;height:12px;vertical-align:middle\"> ${v.source} | ${new Date(v.date).toLocaleDateString()}</div>\n          <a href=\"${v.url}\" target=\"_blank\">▶ Watch</a>\n        </div>`).join('') : '<p style=\"grid-column:span 2;text-align:center;padding:50px;color:#888\">No videos available today.</p>'}\n      </div>\n      <span class=\"page-num left\">5</span>\n    </div>\n  </div>\n  \n  <!-- PAGE 6: SOURCES -->\n  <div class=\"page\">\n    <div class=\"page-inner\">\n      <div class=\"sources-header\">📰 OUR SOURCES</div>\n      <p style=\"text-align:center;margin-bottom:20px;color:#666;font-size:13px\">Today's edition compiled from these trusted sources:</p>\n      <div class=\"source-list\">\n        ${[...new Map(content.map(c => [c.source, c])).values()].map(c => `\n        <div class=\"source-item\">\n          <img src=\"${c.source_logo}\" alt=\"\">\n          <span>${c.source}</span>\n        </div>`).join('')}\n      </div>\n      <p style=\"margin-top:30px;font-size:11px;color:#888;text-align:center\">Click any article to read full coverage on the original website.<br>All content is aggregated from public sources and remains property of original publishers.</p>\n      <span class=\"page-num right\">6</span>\n    </div>\n  </div>\n  \n  <!-- PAGE 7: AD/FILLER -->\n  <div class=\"page\">\n    <div class=\"page-inner\" style=\"display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center\">\n      <div style=\"font-family:'Playfair Display',serif;font-size:24px;color:#1a365d;margin-bottom:20px\">Thank You For Reading</div>\n      <div style=\"width:60%;height:2px;background:linear-gradient(90deg,transparent,#d4af37,transparent);margin-bottom:20px\"></div>\n      <p style=\"font-size:14px;color:#666;max-width:80%;line-height:1.8\">The Daily Chronicle delivers curated news from Reddit, Google News, Yahoo News, YouTube, and Hacker News directly to your inbox every morning.</p>\n      <p style=\"margin-top:20px;font-size:12px;color:#888\">Share with friends • Stay informed • Read daily</p>\n      <span class=\"page-num left\">7</span>\n    </div>\n  </div>\n  \n  <!-- BACK COVER -->\n  <div class=\"page back\">\n    <div class=\"cover-stars\">★ ★ ★</div>\n    <h2>See You Tomorrow!</h2>\n    <p>Your next edition arrives in the morning.</p>\n    <div class=\"unsub\">\n      <a href=\"YOUR_UNSUBSCRIBE_URL?token=${d.token}&email=${d.email}\">Unsubscribe from this newsletter</a>\n    </div>\n  </div>\n</div>\n\n<script>\n$(function(){\n  $('#newspaper').turn({width:1000,height:700,autoCenter:true,display:'double',acceleration:true,gradients:true,elevation:50,when:{turned:function(e,p){$('#cp').text(p)}}});\n  $('#tp').text($('#newspaper').turn('pages'));\n});\n</script>\n</body>\n</html>`;\n\nreturn [{json:{email:d.email,name:d.name,topic:d.topic,hook:data.hook||'Breaking News',html:html,token:d.token}}];"
+      },
+      "id": "c1c2c3d4-6666-6666-6666-666666666666",
+      "name": "Build HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=📰 {{ $json.hook }} | Daily Chronicle - {{ $json.topic }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html><html><body style=\"font-family:Georgia,serif;margin:0;padding:0;background:#f5f5f5\"><div style=\"max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#1a365d;color:#fff;padding:30px;text-align:center\"><h1 style=\"margin:0;font-size:28px;letter-spacing:3px\">★ DAILY CHRONICLE ★</h1><p style=\"margin:5px 0 0;font-size:14px\">{{ $json.topic }} Edition</p></div><div style=\"height:4px;background:linear-gradient(90deg,#d4af37,#f4e4bc,#d4af37)\"></div><div style=\"padding:30px\"><p>Dear {{ $json.name }},</p><h2 style=\"font-family:Playfair Display,serif;font-size:24px;color:#1a365d;margin:20px 0\">{{ $json.hook }}</h2><p>Your personalized e-newspaper is ready! Click below to read today's curated news with our beautiful page-flip reader.</p><a href=\"YOUR_NEWSLETTER_URL\" style=\"display:inline-block;background:#d4af37;color:#1a365d;padding:15px 35px;text-decoration:none;font-weight:bold;margin:20px 0\">📖 READ TODAY'S EDITION</a><p style=\"font-size:14px;color:#666\">Features: Lead stories, multiple articles, video highlights, and source attribution.</p></div><div style=\"background:#1a365d;color:#fff;padding:20px;text-align:center;font-size:12px\"><a href=\"YOUR_UNSUBSCRIBE_URL?token={{ $json.token }}&email={{ $json.email }}\" style=\"color:#d4af37\">Unsubscribe</a></div></div></body></html>"
+      },
+      "id": "c1c2c3d4-7777-7777-7777-777777777777",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1350, 300],
+      "credentials": {"gmailOAuth2": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Newsletter_Log"},
+        "columns": {"mappingMode": "autoMapInputData", "value": {}}
+      },
+      "id": "c1c2c3d4-8888-8888-8888-888888888888",
+      "name": "Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1570, 300],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {},
+      "id": "c1c2c3d4-9999-9999-9999-999999999999",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1570, 500]
+    }
+  ],
+  "connections": {
+    "Daily 8AM": {"main": [[{"node": "Get Cache", "type": "main", "index": 0}, {"node": "Get Subs", "type": "main", "index": 0}]]},
+    "Get Cache": {"main": [[{"node": "Match", "type": "main", "index": 0}]]},
+    "Get Subs": {"main": [[{"node": "Match", "type": "main", "index": 0}]]},
+    "Match": {"main": [[{"node": "Loop", "type": "main", "index": 0}]]},
+    "Loop": {"main": [[{"node": "Build HTML", "type": "main", "index": 0}], [{"node": "Done", "type": "main", "index": 0}]]},
+    "Build HTML": {"main": [[{"node": "Send Email", "type": "main", "index": 0}]]},
+    "Send Email": {"main": [[{"node": "Log", "type": "main", "index": 0}]]},
+    "Log": {"main": [[{"node": "Loop", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}

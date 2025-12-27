@@ -1,0 +1,251 @@
+{
+  "name": "02-Content-Aggregator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "hours", "hoursInterval": 24, "triggerAtHour": 6}]
+        }
+      },
+      "id": "b1b2c3d4-1111-1111-1111-111111111111",
+      "name": "Daily 6AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Topics"}
+      },
+      "id": "b1b2c3d4-2222-2222-2222-222222222222",
+      "name": "Get Topics",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 200],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Content_Sent"}
+      },
+      "id": "b1b2c3d4-3333-3333-3333-333333333333",
+      "name": "Get Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 400],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "b1b2c3d4-4444-4444-4444-444444444444",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet sentIds = [];\nlet topics = [];\n\nitems.forEach(item => {\n  if (item.json.content_id) sentIds.push(item.json.content_id);\n  if (item.json.topic_name && (item.json.active === 'TRUE' || item.json.active === true)) {\n    topics.push({\n      topic_id: item.json.topic_id,\n      topic_name: item.json.topic_name,\n      keywords: item.json.keywords || item.json.topic_name\n    });\n  }\n});\n\nconst unique = topics.filter((t,i,a) => a.findIndex(x=>x.topic_id===t.topic_id)===i);\nreturn unique.map(t => ({json: {...t, sent_ids: sentIds}}));"
+      },
+      "id": "b1b2c3d4-5555-5555-5555-555555555555",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "b1b2c3d4-6666-6666-6666-666666666666",
+      "name": "Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const t = $input.first().json;\nconst kw = encodeURIComponent(t.keywords);\nconst d = new Date();\nd.setDate(d.getDate() - 7);\nreturn [{json:{...t, kw:kw, since:d.toISOString(), sinceUnix:Math.floor(d.getTime()/1000)}}];"
+      },
+      "id": "b1b2c3d4-7777-7777-7777-777777777777",
+      "name": "Setup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.reddit.com/search.json?q={{ $json.kw }}&sort=hot&limit=10&t=week",
+        "options": {"timeout": 15000}
+      },
+      "id": "b1b2c3d4-8888-8888-8888-888888888881",
+      "name": "Reddit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 100]
+    },
+    {
+      "parameters": {
+        "url": "=https://news.google.com/rss/search?q={{ $json.kw }}&hl=en-US&gl=US&ceid=US:en",
+        "options": {"timeout": 15000}
+      },
+      "id": "b1b2c3d4-8888-8888-8888-888888888882",
+      "name": "Google News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 250]
+    },
+    {
+      "parameters": {
+        "url": "=https://news.search.yahoo.com/rss?p={{ $json.kw }}",
+        "options": {"timeout": 15000}
+      },
+      "id": "b1b2c3d4-8888-8888-8888-888888888883",
+      "name": "Yahoo News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.googleapis.com/youtube/v3/search?part=snippet&q={{ $json.kw }}&type=video&maxResults=5&publishedAfter={{ $json.since }}&key=YOUR_YOUTUBE_API_KEY",
+        "options": {"timeout": 15000}
+      },
+      "id": "b1b2c3d4-8888-8888-8888-888888888884",
+      "name": "YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 550]
+    },
+    {
+      "parameters": {
+        "url": "=https://hn.algolia.com/api/v1/search?query={{ $json.kw }}&tags=story&numericFilters=created_at_i>{{ $json.sinceUnix }}",
+        "options": {"timeout": 15000}
+      },
+      "id": "b1b2c3d4-8888-8888-8888-888888888885",
+      "name": "HackerNews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const setup = $('Setup').first().json;\nconst sentIds = new Set(setup.sent_ids || []);\nconst sevenDaysAgo = new Date(setup.since);\nlet content = [];\n\n// Reddit\ntry {\n  const r = $('Reddit').first().json;\n  if (r?.data?.children) {\n    r.data.children.forEach(p => {\n      const d = p.data;\n      const id = 'reddit_' + d.id;\n      const dt = new Date(d.created_utc * 1000);\n      if (!sentIds.has(id) && dt >= sevenDaysAgo) {\n        content.push({\n          content_id: id,\n          source: 'Reddit',\n          source_logo: 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-32x32.png',\n          title: d.title,\n          summary: d.selftext?.substring(0,200) || 'Discussion on Reddit',\n          url: 'https://reddit.com' + d.permalink,\n          image: d.thumbnail?.startsWith('http') ? d.thumbnail : '',\n          video: '',\n          date: dt.toISOString(),\n          score: d.score || 0,\n          type: 'article'\n        });\n      }\n    });\n  }\n} catch(e) {}\n\n// Google News\ntry {\n  const xml = $('Google News').first().json;\n  if (typeof xml === 'string' && xml.includes('<item>')) {\n    const re = /<item>[\\s\\S]*?<title>([^<]+)<\\/title>[\\s\\S]*?<link>([^<]+)<\\/link>[\\s\\S]*?<pubDate>([^<]+)<\\/pubDate>[\\s\\S]*?<\\/item>/g;\n    let m;\n    while ((m = re.exec(xml)) !== null) {\n      const id = 'gnews_' + Buffer.from(m[2]).toString('base64').slice(0,15);\n      const dt = new Date(m[3]);\n      if (!sentIds.has(id) && dt >= sevenDaysAgo) {\n        content.push({\n          content_id: id,\n          source: 'Google News',\n          source_logo: 'https://news.google.com/favicon.ico',\n          title: m[1].replace(/&amp;/g,'&').replace(/&quot;/g,'\"'),\n          summary: 'Latest news coverage',\n          url: m[2],\n          image: '',\n          video: '',\n          date: dt.toISOString(),\n          score: 0,\n          type: 'news'\n        });\n      }\n    }\n  }\n} catch(e) {}\n\n// Yahoo News\ntry {\n  const xml = $('Yahoo News').first().json;\n  if (typeof xml === 'string' && xml.includes('<item>')) {\n    const re = /<item>[\\s\\S]*?<title>([^<]+)<\\/title>[\\s\\S]*?<link>([^<]+)<\\/link>[\\s\\S]*?<pubDate>([^<]+)<\\/pubDate>[\\s\\S]*?<\\/item>/g;\n    let m;\n    while ((m = re.exec(xml)) !== null) {\n      const id = 'yahoo_' + Buffer.from(m[2]).toString('base64').slice(0,15);\n      const dt = new Date(m[3]);\n      if (!sentIds.has(id) && dt >= sevenDaysAgo) {\n        content.push({\n          content_id: id,\n          source: 'Yahoo News',\n          source_logo: 'https://s.yimg.com/rz/l/favicon.ico',\n          title: m[1].replace(/&amp;/g,'&'),\n          summary: 'Yahoo News coverage',\n          url: m[2],\n          image: '',\n          video: '',\n          date: dt.toISOString(),\n          score: 0,\n          type: 'news'\n        });\n      }\n    }\n  }\n} catch(e) {}\n\n// YouTube\ntry {\n  const yt = $('YouTube').first().json;\n  if (yt?.items) {\n    yt.items.forEach(v => {\n      const id = 'yt_' + v.id.videoId;\n      const dt = new Date(v.snippet.publishedAt);\n      if (!sentIds.has(id) && dt >= sevenDaysAgo) {\n        content.push({\n          content_id: id,\n          source: 'YouTube',\n          source_logo: 'https://www.youtube.com/favicon.ico',\n          title: v.snippet.title,\n          summary: v.snippet.description?.substring(0,200) || '',\n          url: 'https://youtube.com/watch?v=' + v.id.videoId,\n          image: v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.default?.url || '',\n          video: 'https://youtube.com/embed/' + v.id.videoId,\n          date: dt.toISOString(),\n          score: 0,\n          type: 'video'\n        });\n      }\n    });\n  }\n} catch(e) {}\n\n// HackerNews\ntry {\n  const hn = $('HackerNews').first().json;\n  if (hn?.hits) {\n    hn.hits.forEach(h => {\n      const id = 'hn_' + h.objectID;\n      const dt = new Date(h.created_at);\n      if (!sentIds.has(id) && dt >= sevenDaysAgo) {\n        content.push({\n          content_id: id,\n          source: 'Hacker News',\n          source_logo: 'https://news.ycombinator.com/favicon.ico',\n          title: h.title,\n          summary: 'Tech discussion - ' + (h.points || 0) + ' points',\n          url: h.url || 'https://news.ycombinator.com/item?id=' + h.objectID,\n          image: '',\n          video: '',\n          date: dt.toISOString(),\n          score: h.points || 0,\n          type: 'tech'\n        });\n      }\n    });\n  }\n} catch(e) {}\n\n// Sort and limit\ncontent.sort((a,b) => new Date(b.date) - new Date(a.date));\ncontent = content.slice(0, 20);\n\nreturn [{\n  json: {\n    topic_id: setup.topic_id,\n    topic_name: setup.topic_name,\n    fetch_date: new Date().toISOString(),\n    content: content,\n    content_ids: content.map(c => c.content_id)\n  }\n}];"
+      },
+      "id": "b1b2c3d4-9999-9999-9999-999999999999",
+      "name": "Process All",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1790, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer YOUR_OPENROUTER_KEY"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"mistralai/mistral-7b-instruct:free\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a newspaper editor. Output only valid JSON.\"},{\"role\":\"user\",\"content\":\"Create newspaper content for {{ $json.topic_name }}. Articles: {{ JSON.stringify($json.content.slice(0,8)) }}. Return JSON: {hook_headline:string, lead_story:{title,summary,points:[]}, stories:[{title,brief}], sources:string}\"}],\"max_tokens\":1500}"
+      },
+      "id": "b1b2c3d4-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2010, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const proc = $('Process All').first().json;\nconst ai = $input.first().json;\nlet parsed = {};\ntry {\n  const txt = ai.choices?.[0]?.message?.content || '{}';\n  const m = txt.match(/\\{[\\s\\S]*\\}/);\n  if (m) parsed = JSON.parse(m[0]);\n} catch(e) {\n  parsed = {hook_headline:'Top '+proc.topic_name+' News',lead_story:{title:'Latest Updates',summary:'Check the articles below.',points:[]},stories:[],sources:'Multiple'};\n}\nreturn [{json:{...proc,hook:parsed.hook_headline||'Breaking News',lead:parsed.lead_story||{},stories:parsed.stories||[],sources:parsed.sources||''}}];"
+      },
+      "id": "b1b2c3d4-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "name": "Parse AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2230, 400]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Content_Cache"},
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        }
+      },
+      "id": "b1b2c3d4-cccc-cccc-cccc-cccccccccccc",
+      "name": "Save Cache",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2450, 300],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Parse AI').first().json;\nconst today = new Date().toISOString().split('T')[0];\nreturn (d.content_ids||[]).map(id => ({json:{content_id:id,sent_date:today,topic:d.topic_name}}));"
+      },
+      "id": "b1b2c3d4-dddd-dddd-dddd-dddddddddddd",
+      "name": "Prep IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2450, 500]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Content_Sent"},
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        }
+      },
+      "id": "b1b2c3d4-eeee-eeee-eeee-eeeeeeeeeeee",
+      "name": "Save Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2670, 500],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {},
+      "id": "b1b2c3d4-ffff-ffff-ffff-ffffffffffff",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2670, 300]
+    }
+  ],
+  "connections": {
+    "Daily 6AM": {"main": [[{"node": "Get Topics", "type": "main", "index": 0}, {"node": "Get Sent", "type": "main", "index": 0}]]},
+    "Get Topics": {"main": [[{"node": "Merge", "type": "main", "index": 0}]]},
+    "Get Sent": {"main": [[{"node": "Merge", "type": "main", "index": 1}]]},
+    "Merge": {"main": [[{"node": "Prepare", "type": "main", "index": 0}]]},
+    "Prepare": {"main": [[{"node": "Loop", "type": "main", "index": 0}]]},
+    "Loop": {"main": [[{"node": "Setup", "type": "main", "index": 0}], [{"node": "Done", "type": "main", "index": 0}]]},
+    "Setup": {"main": [[{"node": "Reddit", "type": "main", "index": 0}, {"node": "Google News", "type": "main", "index": 0}, {"node": "Yahoo News", "type": "main", "index": 0}, {"node": "YouTube", "type": "main", "index": 0}, {"node": "HackerNews", "type": "main", "index": 0}]]},
+    "Reddit": {"main": [[{"node": "Process All", "type": "main", "index": 0}]]},
+    "Google News": {"main": [[{"node": "Process All", "type": "main", "index": 0}]]},
+    "Yahoo News": {"main": [[{"node": "Process All", "type": "main", "index": 0}]]},
+    "YouTube": {"main": [[{"node": "Process All", "type": "main", "index": 0}]]},
+    "HackerNews": {"main": [[{"node": "Process All", "type": "main", "index": 0}]]},
+    "Process All": {"main": [[{"node": "AI", "type": "main", "index": 0}]]},
+    "AI": {"main": [[{"node": "Parse AI", "type": "main", "index": 0}]]},
+    "Parse AI": {"main": [[{"node": "Save Cache", "type": "main", "index": 0}, {"node": "Prep IDs", "type": "main", "index": 0}]]},
+    "Save Cache": {"main": [[{"node": "Loop", "type": "main", "index": 0}]]},
+    "Prep IDs": {"main": [[{"node": "Save Sent", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}

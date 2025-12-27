@@ -1,0 +1,139 @@
+{
+  "name": "04-Unsubscribe-Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "unsubscribe",
+        "responseMode": "responseNode"
+      },
+      "id": "d1d2d3d4-1111-1111-1111-111111111111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "unsub-hook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $input.first().json.query || {};\nconst token = q.token || '';\nconst email = (q.email || '').toLowerCase();\nif (!token || !email) return [{json:{valid:false}}];\nreturn [{json:{valid:true,token,email}}];"
+      },
+      "id": "d1d2d3d4-2222-2222-2222-222222222222",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{"value1": "={{ $json.valid }}", "value2": true}]
+        }
+      },
+      "id": "d1d2d3d4-3333-3333-3333-333333333333",
+      "name": "IF Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Subscribers"}
+      },
+      "id": "d1d2d3d4-4444-4444-4444-444444444444",
+      "name": "Get Subs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [910, 200],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $('Validate').first().json;\nconst subs = $input.all();\nconst match = subs.find(s => s.json.email === p.email && s.json.unsubscribe_token === p.token);\nif (!match) return [{json:{found:false,email:p.email}}];\nreturn [{json:{found:true,email:p.email,name:match.json.name}}];"
+      },
+      "id": "d1d2d3d4-5555-5555-5555-555555555555",
+      "name": "Find",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{"value1": "={{ $json.found }}", "value2": true}]
+        }
+      },
+      "id": "d1d2d3d4-6666-6666-6666-666666666666",
+      "name": "IF Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {"__rl": true, "mode": "list", "value": ""},
+        "sheetName": {"__rl": true, "mode": "list", "value": "Subscribers"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "unsubscribed",
+            "unsubscribed_date": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": ["email"]
+        }
+      },
+      "id": "d1d2d3d4-7777-7777-7777-777777777777",
+      "name": "Update",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1570, 100],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "", "name": ""}}
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Unsubscribed</title><style>body{font-family:Georgia,serif;margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5}.box{background:#fff;padding:50px;text-align:center;max-width:500px;box-shadow:0 5px 30px rgba(0,0,0,0.1)}.icon{font-size:60px;margin-bottom:20px}h1{color:#1a365d}p{color:#666;line-height:1.6}</style></head><body><div class=\"box\"><div class=\"icon\">👋</div><h1>Unsubscribed Successfully</h1><p>You've been removed from our newsletter, {{ $('Find').item.json.name }}.</p><p>We're sorry to see you go!</p></div></body></html>"
+      },
+      "id": "d1d2d3d4-8888-8888-8888-888888888888",
+      "name": "Success Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1790, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Not Found</title><style>body{font-family:Georgia,serif;margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5}.box{background:#fff;padding:50px;text-align:center;max-width:500px;box-shadow:0 5px 30px rgba(0,0,0,0.1)}.icon{font-size:60px;margin-bottom:20px}h1{color:#c0392b}p{color:#666}</style></head><body><div class=\"box\"><div class=\"icon\">❓</div><h1>Not Found</h1><p>We couldn't find a matching subscription.</p></div></body></html>"
+      },
+      "id": "d1d2d3d4-9999-9999-9999-999999999999",
+      "name": "Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1570, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Error</title><style>body{font-family:Georgia,serif;margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5}.box{background:#fff;padding:50px;text-align:center;max-width:500px;box-shadow:0 5px 30px rgba(0,0,0,0.1)}.icon{font-size:60px;margin-bottom:20px}h1{color:#c0392b}p{color:#666}</style></head><body><div class=\"box\"><div class=\"icon\">⚠️</div><h1>Invalid Link</h1><p>The unsubscribe link is invalid.</p></div></body></html>"
+      },
+      "id": "d1d2d3d4-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [910, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": {"main": [[{"node": "Validate", "type": "main", "index": 0}]]},
+    "Validate": {"main": [[{"node": "IF Valid", "type": "main", "index": 0}]]},
+    "IF Valid": {"main": [[{"node": "Get Subs", "type": "main", "index": 0}], [{"node": "Error", "type": "main", "index": 0}]]},
+    "Get Subs": {"main": [[{"node": "Find", "type": "main", "index": 0}]]},
+    "Find": {"main": [[{"node": "IF Found", "type": "main", "index": 0}]]},
+    "IF Found": {"main": [[{"node": "Update", "type": "main", "index": 0}], [{"node": "Not Found", "type": "main", "index": 0}]]},
+    "Update": {"main": [[{"node": "Success Page", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}
